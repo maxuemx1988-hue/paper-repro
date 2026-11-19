@@ -45,6 +45,10 @@ description: 复现数值物理论文的定量输出（曲线图/表格/文中�
 - 决策三态：`auto`（高置信且可逆）/ `rule=discriminator`（做实验判别）/ `escalated`（命中升级条件）
 - 升级条件只有：**E1** 只能靠造假通过；**E2** 两种读法分别导致定/否且做不出判别实验；**E3** 冻结后改目标集合；
   **E4** 不可逆且影响判定且置信非高；**E5** 所有参考不可得。违反 E1 直接停。
+- **E2 要付钱**（v3.1）：`escalated` 必须带 `discriminators[]`（实验 + `cost_cpu_hours`/`cost_eng_hours` +
+  `run|skipped`）。凡成本低于 `budget.json` 的 `escalation_ceiling`（默认 0.5 CPU-h / 1.0 eng-h）
+  的判别实验，**必须先做**；做过的实验若 `decisive:true` 就不许再停在 escalated。
+  理由（dogfood 实测）：一个 10 分钟的判别实验被写成“机器无法分辨”交人裁决，而它正是平台宽度差的唯一原因。
 - 收尾只交两份：`REPORT.md`（六节固定）+ `REVIEW.md`（`make_review.py` 生成，**禁手改**）。
   人的介入点只有 `REVIEW.md` 签署与 E1–E5。
 
@@ -97,6 +101,6 @@ python3 scripts/validate.py <dir>                  # 阶段验收（升 stage �
 
 ## 8. 版本
 
-发布以 git tag 为准：`VERSION` 写当前发布标签（今天 `v2`），`CHANGELOG.md` 顶部对照表把 tag 映射到开发线
-（`v2` = 开发线 v3.0）。每个条目标题写「发布标签 X / 开发线 Y」。每次改动必须同步 CHANGELOG 并跑
+发布以 git tag 为准：`VERSION` 写当前发布标签（今天 `v3`），`CHANGELOG.md` 顶部对照表把 tag 映射到开发线
+（`v3` = 开发线 v3.1）。每个条目标题写「发布标签 X / 开发线 Y」。每次改动必须同步 CHANGELOG 并跑
 `python3 scripts/selfcheck.py`（它核对 `VERSION` 与标题一致）。

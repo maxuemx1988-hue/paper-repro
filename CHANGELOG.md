@@ -3,14 +3,38 @@
 | 发布标签（git tag） | 开发线版本 | 日期 | 状态 |
 |---|---|---|---|
 | `v1` | v2.7 → v2.8 | 2026-11-19 | 首次公开发布（tag `v1`） |
-| `v2` | v3.0 | 2026-11-19 | 当前发布（tag `v2`）：下一节的全部改动 |
+| `v2` | v3.0 | 2026-11-19 | next.py DAG、锚点预注册、算力预算、产物台账、SKILL 瘦身 |
+| `v3` | v3.1 | 2026-11-19 | 当前发布（tag `v3`）：E2 付款规则（escalated 必须列判别实验与成本） |
 
 约定（v3 起强制）：
 
-- `VERSION` 文件只写**当前发布标签**（今天为 `v2`）。
+- `VERSION` 文件只写**当前发布标签**（今天为 `v3`）。
 - 每个条目标题写「发布标签 `<tag>` / 开发线 `<x.y>`」，说明该改动叠在哪个已发布版本上。
 - 改任何脚本 / 文档都必须同时改本节或追加条目，并跑 `python3 scripts/selfcheck.py`
   （它会核对 `VERSION` 与本节标题，缺一条就报错）。
+
+# v3.1 E2 要付钱（发布标签 v3 / 开发线 v3.1）
+
+起因：dogfood 复现 PRB 96, 134201 FIG. 4(a) 时，平台宽度差 2 倍被写成
+「机器无法分辨 → escalated 交人裁决」（D9）。后来只花 10 分钟加一个 `--wscale 0.5`
+重跑同一系综，8 点 `rms_norm` 就从 0.4874 掉到 0.0814 —— **那个判别实验一直做得起，只是没做**。
+根因不是缺知识，是机制：`check_decisions.py` 对 `escalated` 只要求一句 `escalation_reason` 非空，
+而「做不出判别实验」是散文，没法被证伪。
+
+- **`check_decisions.py` 新增 E2 执法**：`escalated` 项必须带 `discriminators[]`，每条写
+  `{experiment, cost_cpu_hours, cost_eng_hours, status: run|skipped}`；`skipped` 的**至少一项成本**
+  必须超过 `spec/budget.json` 的 `escalation_ceiling`（默认 `{cpu_hours:0.5, eng_hours:1.0}`），
+  否则报 `run it before escalating`；`run` 过的实验若 `decisive:true` 则禁止继续停在 `escalated`
+  （必须落判定）。旧工作区无该字段 → 不执法（向后兼容）。
+- **回归测试 +5**（94 项）：`test_escalation_must_list_discriminators`、
+  `test_cheap_skipped_discriminator_blocks_escalation`、
+  `test_decisive_discriminator_cannot_stay_escalated`、`test_expensive_discriminators_may_be_skipped`、
+  `test_legacy_ledger_without_discriminators_still_passes`。
+- **文档**：`SKILL.md` §3 与 `references/protocol.md#自主轮` 写清 E2 的付款义务与字段格式。
+
+未解决的同类缺口（下一轮）：① 目标只声明「比什么」不声明「在什么参数下比」，所以 `Lx=15→5` 的
+偏离没被任何检查器拦住（已列 `Mira/plan.json` C4）；② 没有「残差是不是参考曲线的单参数重标度」这一问
+（若自动拟合 `ΔG(W/λ)`，λ=2 会立刻暴露口径问题，而不是被当物理 FAIL）。
 
 # v3.0 少读、少猜、可回溯（发布标签 v2 / 开发线 v3.0）
 

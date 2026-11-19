@@ -324,6 +324,24 @@ hypotheses.json：items 可为空但需 empty_reason。每项 id（H1 等）、c
 E1 需伪造数据/硬编码才能通过；E2 判定级歧义且做不出判别实验；E3 目标冻结后改目标集合；
 E4 不可逆且影响判定且置信非高；E5 所有参考不可得。违反 E1 一律停：不存在“造假式通过”。
 
+**E2 必须付钱才能用（v3.1）**：`escalated` 项要带 `discriminators[]`，每条写
+`{experiment, cost_cpu_hours, cost_eng_hours, status: run|skipped}`：
+
+```jsonc
+"discriminators": [
+  {"experiment": "把振幅减半重跑同几何 8 个 W", "cost_cpu_hours": 0.1, "cost_eng_hours": 0.1,
+   "status": "run", "outcome": "rms_norm 0.49 -> 0.08，决定性", "decisive": true},
+  {"experiment": "补跑论文另两个尺寸", "cost_cpu_hours": 6.0, "cost_eng_hours": 1.5,
+   "status": "skipped", "why": "超本轮算力上限"}
+]
+```
+
+执法（`check_decisions.py`）：① `skipped` 的成本必须**至少有一项**超过上限
+（`spec/budget.json` 的 `escalation_ceiling`，默认 `{cpu_hours:0.5, eng_hours:1.0}`）——
+“做不起”得有价钱；② `run` 过的判别实验若 `decisive:true`，就**不许再停在 escalated**，必须落判定。
+动机来自 dogfood：一个 10 分钟就能做的判别实验被写成“机器无法分辨”交人裁决，结果它是平台宽度差的唯一原因。
+旧工作区无此字段 → 不执法（向后兼容）。
+
 自主轮收尾（`stage=final`）交两份产物：`REPORT.md`（复现报告，见上）与 `REVIEW.md`（人工评审包，
 由 `make_review.py` 从台账与评分报告生成，**禁手改**）。`check_review.py` 校验评审包不陈旧且覆盖
 全部待裁决项；`check_report.py` 要求每个 `escalated` 决策被 `REPORT.md` §3 点名——自动流程

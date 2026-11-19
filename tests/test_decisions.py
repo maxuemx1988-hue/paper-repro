@@ -124,6 +124,58 @@ class Decisions(unittest.TestCase):
         with self.assertRaises(Incomplete):
             check_decisions(self.root)
 
+    # ---- v3.1: the E2 test.  An escalation reason used to be prose only, so "the machine
+    # cannot tell the two readings apart" passed while a cheap experiment could tell them
+    # apart.  Dogfooding found exactly that (a factor-2 convention hid behind an escalation).
+    def test_escalation_must_list_discriminators(self):
+        self.ledger(self.item(id="D1", impact="verdict", confidence="medium", status="escalated",
+                              escalation_reason="两种读法无法分辨", discriminators=[]),
+                    self.item(id="D2", impact="verdict", confidence="medium",
+                              status="escalated", escalation_reason="待裁决",
+                              discriminators=[{"experiment": "补跑另一口径", "cost_cpu_hours": 3.0,
+                                               "cost_eng_hours": 0.2, "status": "skipped",
+                                               "why": "超过算力上限"}]))
+        with self.assertRaises(Incomplete):
+            check_decisions(self.root)
+
+    def test_cheap_skipped_discriminator_blocks_escalation(self):
+        # 0.1 CPU-h at 0.35 s/sample is a 10-minute run: escalating instead is the bug.
+        self.ledger(self.item(impact="verdict", confidence="medium", status="escalated",
+                              escalation_reason="无法分辨",
+                              discriminators=[{"experiment": "把振幅减半重跑",
+                                               "cost_cpu_hours": 0.1, "cost_eng_hours": 0.05,
+                                               "status": "skipped", "why": "没想到"}]))
+
+        with self.assertRaises(Incomplete) as ctx:
+            check_decisions(self.root)
+        self.assertIn("run it before escalating", str(ctx.exception))
+
+    def test_decisive_discriminator_cannot_stay_escalated(self):
+        self.ledger(self.item(impact="verdict", confidence="medium", status="escalated",
+                              escalation_reason="无法分辨",
+                              discriminators=[{"experiment": "把振幅减半重跑",
+                                               "cost_cpu_hours": 0.1, "cost_eng_hours": 0.05,
+                                               "status": "run", "outcome": "rms 0.49 -> 0.08",
+                                               "decisive": True}]))
+        with self.assertRaises(Incomplete) as ctx:
+            check_decisions(self.root)
+        self.assertIn("record the verdict", str(ctx.exception))
+
+    def test_expensive_discriminators_may_be_skipped(self):
+        self.ledger(self.item(impact="verdict", confidence="medium", status="escalated",
+                              escalation_reason="成本超出本轮上限",
+                              discriminators=[{"experiment": "补跑论文另两个尺寸",
+                                               "cost_cpu_hours": 6.0, "cost_eng_hours": 0.5,
+                                               "status": "skipped", "why": "6 CPU-h 超预算"}]))
+
+        self.assertEqual(check_decisions(self.root), 0)
+
+    def test_legacy_ledger_without_discriminators_still_passes(self):
+        # compatibility: workspaces created before v3.1 must not turn red
+        self.ledger(self.item(impact="verdict", confidence="medium", status="escalated",
+                              escalation_reason="旧工作区没有 discriminators 字段"))
+        self.assertEqual(check_decisions(self.root), 0)
+
     def test_packet_is_generated_and_verified(self):
         self.ledger(self.item())
         out = io.StringIO()

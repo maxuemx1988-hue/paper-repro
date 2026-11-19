@@ -18,6 +18,13 @@ reversible the choice is.  This checker enforces the *policy*, never the physics
 Escalated items are NOT a failure: an autonomous run may legitimately end with
 open questions.  They are queued by make_review.py and must be echoed in
 REPORT.md section 3.  What is a failure is masking them.
+
+v3.1 adds the *E2 test*, because dogfooding showed the gap: an escalated item used
+to need only a plausible `escalation_reason` string, so "the machine cannot tell the
+two readings apart" passed as prose while a 10-minute computation could in fact
+tell them apart.  Now an escalated decision must list its `discriminators` with a
+cost, and may only skip one it genuinely cannot afford (budget.json ceiling).
+"No discriminator exists" is treated as a claim that has to be paid for.
 """
 import argparse
 import re
@@ -29,6 +36,67 @@ STATUSES = ("auto", "escalated", "human_confirmed", "human_overridden")
 IMPACTS = ("verdict", "scope", "numeric", "convention", "eligibility")
 CONFIDENCE = ("high", "medium", "low")
 REVERSIBILITY = ("reversible", "one-way")
+
+# What counts as "cheap enough that you must run it before escalating", in hours.
+# CPU hours come from measured throughput; engineering hours are the human-time cost
+# of writing/instrumenting the experiment.  Override in spec/budget.json as
+# {"escalation_ceiling": {"cpu_hours": 0.5, "eng_hours": 1.0}}.
+DEFAULT_CEILING = {"cpu_hours": 0.5, "eng_hours": 1.0}
+
+
+def ceiling(root):
+    path = within(root, "spec/budget.json")
+    limits = dict(DEFAULT_CEILING)
+    if path.is_file():
+        try:
+            override = read_json(path).get("escalation_ceiling") or {}
+        except (OSError, ValueError):
+            override = {}
+        for key in limits:
+            value = override.get(key)
+            if isinstance(value, (int, float)) and value >= 0:
+                limits[key] = float(value)
+    return limits
+
+
+def check_discriminators(item, did, limits):
+    """An escalation must show that the deciding experiment is out of reach, not that
+    it was never thought of.  Each entry: experiment, cost_cpu_hours, cost_eng_hours,
+    status in {run, skipped}; `run` needs outcome (and decisive must be false),
+    `skipped` needs why *and* a cost above at least one ceiling."""
+    entries = item.get("discriminators")
+    require(isinstance(entries, list) and entries,
+            f"{did}: escalated decision needs discriminators[] — list the experiments that could "
+            "settle it with their cost, or prove none exists")
+    for entry in entries:
+        require(isinstance(entry, dict), f"{did}: discriminator entries must be objects")
+        require(bool(entry.get("experiment")),
+                f"{did}: each discriminator needs experiment text")
+        costs = {}
+        for key, default in (("cost_cpu_hours", 0.0), ("cost_eng_hours", 0.0)):
+            value = entry.get(key, default)
+            require(isinstance(value, (int, float)) and value >= 0,
+                    f"{did}: discriminator needs numeric {key}")
+            costs[key] = float(value)
+        status = entry.get("status")
+        require(status in ("run", "skipped"),
+                f"{did}: discriminator status must be run or skipped (got {status!r})")
+        if status == "run":
+            require(bool(entry.get("outcome")),
+                    f"{did}: a run discriminator must record its outcome")
+            require(not entry.get("decisive"),
+                    f"{did}: you ran a decisive discriminator — record the verdict instead of "
+                    "escalating (status must not be 'escalated')")
+        else:
+            require(bool(entry.get("why")),
+                    f"{did}: a skipped discriminator must say why it was not run")
+            affordable = (costs["cost_cpu_hours"] <= limits["cpu_hours"]
+                          and costs["cost_eng_hours"] <= limits["eng_hours"])
+            require(not affordable,
+                    f"{did}: skipped discriminator '{entry['experiment']}' costs "
+                    f"{costs['cost_cpu_hours']} CPU-h / {costs['cost_eng_hours']} eng-h, both under "
+                    f"the ceiling {limits['cpu_hours']}/{limits['eng_hours']} — run it before "
+                    "escalating; if it truly cannot decide, say that in the outcome")
 
 
 def check(root):
@@ -44,6 +112,9 @@ def check(root):
     seen = set()
     queue = []
     counts = dict.fromkeys(STATUSES, 0)
+    limits = ceiling(root)
+    # legacy workspaces predate the field; only enforce it once the ledger declares it
+    has_discriminators = any("discriminators" in item for item in items if isinstance(item, dict))
     for item in items:
         did = item.get("id", "")
         require(re.fullmatch(r"D[0-9]+", did) is not None and did not in seen,
@@ -91,6 +162,8 @@ def check(root):
         if status == "escalated":
             require(bool(item.get("escalation_reason")),
                     f"{did}: escalated decision needs escalation_reason")
+            if has_discriminators:
+                check_discriminators(item, did, limits)
             queue.append(did)
         if status in ("human_confirmed", "human_overridden"):
             review = item.get("human_review")

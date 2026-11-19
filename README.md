@@ -89,11 +89,12 @@ CHANGELOG.md          版本演进（每节标注「发布标签 / 开发线」�
 
 ## 版本
 
-**发布标签**写 `VERSION`（今天 `v2`），**开发线**写 `CHANGELOG.md` 顶部对照表。
+**发布标签**写 `VERSION`（今天 `v3`），**开发线**写 `CHANGELOG.md` 顶部对照表。
 每个条目标题形如「发布标签 `v2` / 开发线 `v3.0`」，`selfcheck.py` 会强制这两者一致。
 
 - tag `v1` = 首次公开发布，对应开发线 v2.8（人的介入只剩 `REVIEW.md` 签署与 E1–E5）。
-- tag `v2` = 当前发布，对应开发线 v3.0（`next.py` / `anchors` / `budget` / `artifacts` / SKILL 瘦身）。
+- tag `v3` = 当前发布，对应开发线 v3.1（E2 付款规则：`escalated` 必须列判别实验与成本）。
+- tag `v2` = 开发线 v3.0（`next.py` / `anchors` / `budget` / `artifacts` / SKILL 瘦身）。
 
 ## 测试
 
