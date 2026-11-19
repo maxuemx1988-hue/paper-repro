@@ -43,6 +43,22 @@ def scored(root, tid):
     return hits[0][3]
 
 
+def artifacts(root):
+    """Append-only artifact ledger written by record_artifact.py (may be absent)."""
+    path = Path(root) / "artifacts.jsonl"
+    if not path.is_file():
+        return []
+    rows = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and row.get("path"):
+            rows.append(row)
+    return rows
+
+
 def table(head, rows):
     out = ["| " + " | ".join(head) + " |", "|" + "|".join(["---"] * len(head)) + "|"]
     out += ["| " + " | ".join(r) + " |" for r in rows]
@@ -131,6 +147,20 @@ def build(root):
     lines += [f"自动评分下 PASS 的目标 {len(ok)}/{len(targets)}。这些是数值协议结果，**不等同**科学结论；"
               "逐目标判定与证据绑定见 `REPORT.md` §1。", ""]
 
+    ledger_rows = artifacts(root)
+    lines += [f"## 6. 过程时间线：{len(ledger_rows)} 份登记产物", ""]
+    if ledger_rows:
+        lines += ["由 `record_artifact.py` 边做边钉（append-only，按 sha256 去重）：", ""]
+        lines += table(["时间", "类别", "产物", "目标", "说明", "取代"],
+                       [[r.get("ts", "-"), r.get("kind", "-"), f"`{r['path']}`",
+                         r.get("target") or "-", (r.get("note") or "-").replace("|", "/"),
+                         f"`{r['supersedes']}`" if r.get("supersedes") else "-"]
+                        for r in ledger_rows])
+    else:
+        lines += ["未登记中间产物（本轮没有跑 `record_artifact.py create` / `record_artifact.py <path>`）；"
+                  "过程只能从 `LOG.md` 与 `runs/` 反推。"]
+    lines += [""]
+
     text = "\n".join(lines) + "\n"
     return doc, digest, items, pending, targets, text
 
@@ -145,6 +175,7 @@ def check(root):
         "pending": [i["id"] for i in pending],
         "auto": len([i for i in items if i.get("status") == "auto"]),
         "targets": {t["id"]: {"status": t["status"], **t["metrics"]} for t in targets},
+        "artifacts": [r["path"] for r in artifacts(root)],
     }
     out = within(root, "reports/review.json")
     out.parent.mkdir(parents=True, exist_ok=True)

@@ -302,6 +302,19 @@ def judge_prompt(tid):
             "e^2/h vs mS) could differ, and name it in discrepancies.")
 
 
+def critique_prompt(tid):
+    return (f"Image 1 is OUR OWN reproduction figure for target '{tid}' (target: publication quality). "
+            "Critique it as a journal reviewer would, not as an artist. Return ONLY one JSON object:\n"
+            '{"defects":[{"kind":"label_collide|legend_overlap|ticks_unreadable|clipping|unit_mismatch|'
+            'color_ambiguous|missing_panel|other","severity":"blocker|major|minor",'
+            '"region":"<panel id / corner>","evidence":"<what is visibly wrong>"}],'
+            '"verdict":"accept|revise|reject","notes":"<what a human should re-check>",'
+            '"confidence":"high|medium|low"}\n'
+            "Only report defects you can point at in the pixels. An empty defects list is a valid answer. "
+            "Do NOT report a defect just because a curve differs from a paper you have not seen."
+            "If you suspect a crop/antialiasing artifact, say so in notes instead of filing a defect.")
+
+
 # --------------------------------------------------------------------------- subcommands
 
 def probe(args):
@@ -460,6 +473,66 @@ def audit(args):
     return 0
 
 
+def critique(args):
+    root = Path(args.root).expanduser().resolve()
+    mine = within(root, args.image or f"figures/mine/{args.tid}.png")
+    require(mine.is_file(), f"missing reproduction figure: {mine}")
+    host, key, models = resolve(args)
+    data_url, sent_sha, note = encode(mine, args.max_side)
+    content = [{"type": "text", "text": critique_prompt(args.tid)}]
+    if args.paper:
+        paper = within(root, args.paper)
+        require(paper.is_file(), f"missing paper crop: {paper}")
+        paper_url, paper_sha, paper_note = encode(paper, args.max_side)
+        content += [{"type": "text", "text": "Image 1 (paper original, for layout reference only):"},
+                    {"type": "image_url", "image_url": {"url": paper_url}},
+                    {"type": "text", "text": "Image 2 (our reproduction, the one to critique):"},
+                    {"type": "image_url", "image_url": {"url": data_url}}]
+        note = note or paper_note
+    else:
+        content.append({"type": "image_url", "image_url": {"url": data_url}})
+    model, text, trace = call(host, key, models, content, args.timeout, args.max_tokens)
+    verdict = parse_json(text, "critique")
+    defects = verdict.get("defects")
+    require(isinstance(defects, list), "critique: model did not return a defects list")
+
+    out = within(root, args.out) if args.out else Path(root) / "figures/compare" / f"{args.tid}.critique.json"
+    prior = json.loads(out.read_text(encoding="utf-8")) if out.is_file() else {}
+    for index, defect in enumerate(defects):
+        require(isinstance(defect, dict), "critique defect must be an object")
+        defect["index"] = index
+        defect.setdefault("status", "open")
+    for spec in args.resolve or []:
+        index, _, reason = str(spec).partition("=")
+        require(reason.strip(), "--resolve needs index=reason")
+        defects[int(index)]["status"] = "fixed_or_accepted"
+        defects[int(index)]["resolution"] = reason.strip()
+    for spec in args.dispute or []:
+        index, _, reason = str(spec).partition("=")
+        require(reason.strip(), "--dispute needs index=reason (cite the crop artifact)")
+        defects[int(index)]["status"] = "disputed"
+        defects[int(index)]["resolution"] = reason.strip()
+
+    record = {"schema_version": 1, "prompt_version": PROMPT_VERSION, "target": args.tid,
+              "mine": {"file": str(mine.relative_to(root)), "sha256": sha256(mine)},
+              "sent": {"sha256": sent_sha, "note": note},
+              "model_requested": models, "model_used": model, "trace": trace,
+              "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+              "judgement": verdict, "defects": defects,
+              "open": sum(1 for d in defects if d.get("status") == "open"),
+              "superseded_by_human": bool(prior.get("defects")),
+              "raw_response": text}
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+    for defect in defects:
+        print(f"  {defect.get('status'):17s} [{defect.get('severity', '?'):7s}] "
+              f"{defect.get('kind', '?'):16s} {defect.get('region', '-')}: {defect.get('evidence', '')}")
+    print(f"[critique] {len(defects)} defect(s), {record['open']} open -> {out}")
+    print("[note] 图面批评是证据不是判定：数字验收仍看 check_loss / check_figure_side_by_side；"
+          "驳回判读器请用 --dispute index=理由并附裁切证据")
+    return 0
+
+
 def judge(args):
     root = Path(args.root).expanduser().resolve()
     paper = within(root, args.paper)
@@ -547,6 +620,17 @@ def main(argv=None):
     p_judge.add_argument("-o", "--out", default=None)
     common(p_judge)
     p_judge.set_defaults(func=judge)
+
+    p_crit = sub.add_parser("critique", help="出版质量自查：列出图面缺陷（*.critique.json）")
+    p_crit.add_argument("root")
+    p_crit.add_argument("tid")
+    p_crit.add_argument("--image", default=None, help="默认 figures/mine/<tid>.png")
+    p_crit.add_argument("--paper", default=None, help="可选：同时给论文原图做双图对照")
+    p_crit.add_argument("-o", "--out", default=None)
+    p_crit.add_argument("--resolve", action="append", default=[], help="index=理由（已修或被接受）")
+    p_crit.add_argument("--dispute", action="append", default=[], help="index=理由（判读器误报）")
+    common(p_crit)
+    p_crit.set_defaults(func=critique)
 
     args = parser.parse_args(argv)
     try:

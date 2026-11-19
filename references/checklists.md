@@ -8,6 +8,8 @@
   无官方代码 → Route B（**不剔除**），但需 ① 至少一个印刷数值锚点（不能只有 `digitized`）、
   ② 至少一条 `limit`/`invariant` 标定断言、③ `code_absence_check` 记录检索位置；
   既无代码又只有数字化图且无任何退化极限才剔除，剔除记 `impact=eligibility` 的自动决策。
+- **首跑前把论文侧数值立成尺子**：平台值/峰位/带隙写进 `spec/anchors.json`（含 unit、tolerance、source.locator）；
+  首个 `manifest.json` 会记它的 sha256，之后改动必须给判别实验（`check_anchors.py`）。
 - 预声明参考定位/版本/条件、不确定度、用途、是否参与调参、误差指标、阈值依据与计算预算。
 - 没有适用领域包时记录缺口，不凭空补不变量。
 - **官方发布数据先冒烟**：`paper/refcode/` 下有输出数据时，先对拍最小可对拍量并登记 `provenance.official_smoke`；不要等长计算失败后再回头找证据。
@@ -18,6 +20,10 @@
 - 用独立先导实验评估收敛和效应；弱效应或零结果不受全局 5% 门槛限制。
 - 模拟进程输出真实环境/求解器/dtype；保存种子、配置、输入和产物哈希。
 - 长任务增量落盘、保存日志和退出状态；中断后确认进程是否还在运行，不假定工具行为。
+- **算力先算再跑**：`spec/budget.json` 写算式级估算与出路清单；>2 h 必须分块 + `resume`；
+  ETA 只从 `runs/*/manifest.json` 实测推（`check_budget.py`），不抄工具错误文案里的秒数。
+- **边做边钉**：每个中间产物立刻 `record_artifact.py`（按 sha256 去重，重建的旧图用 `--supersede`），
+  否则最后只能从 184 个文件里挑 5 个写报告。
 - **量级级偏差先取证再动参**：结果差 ≥2 倍或量子化值非整数时，第一个动作不是调参：
   Route A 派 `code-auditor`；Route B 做解析极限对表 → 独立第二实现交叉 → 收敛阶检查；
   调参必须记录 `[AUDIT]` 依据。
@@ -42,6 +48,8 @@
 - **图像读数走 `vision.py`**：`probe` → `describe` / `audit` 生成审计，再用原生 `read` 亲眼复核坐标与量程；
   模型读数不得当数字化结果用（取数用 `digitize.py` 像素标定）；`review.method=model` 必须有 `vision.raw` 哈希。
 - 推荐对每个论文图目标跑 `vision.py judge` 并把 `verdict/discrepancies` 写进报告；它只是证据不是闸门。
+- 交付前跑 `vision.py critique` 自查图例/标签/刻度/裁切；缺陷写 `*.critique.json`，
+  驳回判读器用 `--dispute index=理由`（附裁切证据），不得静默忽略。
 - 官方输出可用于 loss，但只能单独验证作者实现；核对运行绑定。独立模式需先行基线，作者复运行模式允许直接使用官方代码。
 - 复用调参参考须披露，不称为留出验收；来源冲突保留并列结果，不默认官方实现正确。
 - 曲线关心峰/台阶时加特征指标；地图/表格验证坐标和顺序；随机结果报告误差棒和统计检验。

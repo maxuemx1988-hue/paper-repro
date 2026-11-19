@@ -36,6 +36,13 @@ def create(root, title, level, official_code, reproduction_mode="paper"):
                                   "official_metadata_used": [], "references": [], "comparisons": []},
         "spec/hypotheses.json": {"empty_reason": "尚未开展归因实验", "items": []},
         "spec/decisions.json": {"empty_reason": "尚未开始自主复现轮", "items": []},
+        "spec/anchors.json": {"empty_reason": "TEMPLATE: 首跑前把论文侧数值（平台值/峰位/带隙）登记成 items；"
+                                          "record_run.py 会把本文件 sha256 写进第一个 manifest，事后修改需 "
+                                          "decisions.json 提供 {anchors_amendment:true, rule:'discriminator'}",
+                            "items": []},
+        "spec/budget.json": {"not_applicable": "TEMPLATE: 若某个目标需要 >30 min 的扫描，删掉此行并填 "
+                                                "estimate{python 侧算力估算+basis}/paths_considered/chosen{chunk_size,resume}"
+                                                "/measured[{done,seconds,run}]；stage=final 前必须落定"},
         "spec/README.md": (Path(__file__).resolve().parent.parent / "references/spec_template.md").read_text(encoding="utf-8"),
         "REPORT.md": (Path(__file__).resolve().parent.parent / "references/report_template.md").read_text(encoding="utf-8"),
         "spec/domain_profile.md": (Path(__file__).resolve().parent.parent / "references/domains/_profile_template.md").read_text(encoding="utf-8"),

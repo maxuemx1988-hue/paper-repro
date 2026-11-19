@@ -7,14 +7,16 @@ import sys
 from common import finish, project, run
 
 
-def check(root):
+def commands(root):
+    """The ordered, stage-applicable check list. Shared with next.py so the two never drift."""
     doc = project(root)
-    scripts = Path(__file__).resolve().parent
     commands = [("check_spec.py", []), ("check_domain_profile.py", []),
                 ("check_profile_anchors.py", [])]
     if doc["stage"] != "planning":
-        commands += [("check_official_smoke.py", []), ("check_route.py", []), ("check_physics_code.py", []), ("check_fix_log.py", []), ("check_calibration.py", []),
-                     ("check_env.py", []), ("check_hypotheses.py", []), ("check_decisions.py", [])]
+        commands += [("check_official_smoke.py", []), ("check_route.py", []), ("check_physics_code.py", []),
+                     ("check_fix_log.py", []), ("check_calibration.py", []), ("check_anchors.py", []),
+                     ("check_budget.py", []), ("check_env.py", []), ("check_hypotheses.py", []),
+                     ("check_decisions.py", [])]
     if doc["stage"] == "final":
         commands.append(("check_independence.py", []))
     for item in doc["targets"] if doc["stage"] != "planning" else []:
@@ -35,8 +37,14 @@ def check(root):
         commands.append(("check_review.py", []))
         # last: the report quotes numbers from the reports/ files written above
         commands.append(("check_report.py", []))
+    return doc, commands
+
+
+def check(root):
+    scripts = Path(__file__).resolve().parent
+    doc, steps = commands(root)
     codes = []
-    for script, args in commands:
+    for script, args in steps:
         print(f"\n>>> {script} {' '.join(args)}", flush=True)
         try:
             result = subprocess.run([sys.executable, str(scripts / script), str(root), *args], timeout=120)

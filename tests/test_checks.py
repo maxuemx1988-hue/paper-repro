@@ -476,10 +476,17 @@ class Checks(unittest.TestCase):
             protocol[name] = dict(file=file, keys=["x", "y"], roles={"x":"x", "y":"y"}, units={"x":"1", "y":"1"})
         self.write("spec/fig1.loss.json", protocol)
         assertion = dict(id="C1", category="limit", desc="fixture identity", kind="value", file="data/mine/fig1.npz", key="y", index=10, expect=1, atol=1e-10)
+        anchors = self.write("spec/anchors.json", {"items": [
+            {"id": "A1", "quantity": "fixture_identity", "expected": 1, "unit": "1",
+             "tolerance": 0.01, "source": {"kind": "analytic", "locator": "fixture identity y=x"},
+             "status": "held",
+             "evidence": [{"file": "data/mine/fig1.npz", "sha256": sha256(data),
+                           "metric": "y[-1]", "result": 1.0}]}]})
+        self.write("spec/budget.json", {"not_applicable": "single 11-point analytic fixture, no scan"})
         self.write("spec/calibration.json", {"assertions":[assertion], "not_applicable":{"invariant":"fixture", "paper":"fixture"}})
         expected = dict(python="3.test", executable="/fixture/python", packages={"numpy":"fixture"}, solver="fixture.identity", dtypes={"x":"float64", "y":"float64"})
         runtime = self.write("data/mine/runtime.json", {**expected, "data":{"file":"data/mine/fig1.npz", "sha256":sha256(data)}})
-        manifest = self.write("runs/test/manifest.json", {"returncode":0, "started":"2026-01-01T00:00:00+00:00", "snapshot":{"code/model.py":sha256(self.root / "code/model.py")}, "outputs":{"data/mine/fig1.npz":sha256(data), "data/mine/runtime.json":sha256(runtime)}})
+        manifest = self.write("runs/test/manifest.json", {"id":"test", "returncode":0, "started":"2026-01-01T00:00:00+00:00", "snapshot":{"code/model.py":sha256(self.root / "code/model.py")}, "outputs":{"data/mine/fig1.npz":sha256(data), "data/mine/runtime.json":sha256(runtime)}, "anchors_sha256": sha256(anchors)})
         self.write("spec/environment.json", {"expected":expected, "runtime":{"file":"data/mine/runtime.json", "sha256":sha256(runtime)}, "run":{"file":"runs/test/manifest.json", "sha256":sha256(manifest)}})
         (self.root / "LOG.md").write_text("# 迭代日志\n\n| 时间 | ID | 症状 | 根因 | 改动 | 证据 | 结果 |\n|---|---|---|---|---|---|---|\n| 2026-01-01 | [FIX:F1] | synthetic fixture | identity | add model | run=runs/test/manifest.json | PASS |\n", encoding="utf-8")
 

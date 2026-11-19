@@ -17,6 +17,17 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def anchors_fingerprint(root):
+    """Freeze the pre-registered anchors at run time (check_anchors.py compares this).
+
+    Only the *first* manifest matters: it is the moment the paper-side numbers must
+    already be on the record.  Recording it every time costs nothing and makes the
+    baseline unambiguous even if an early run is later deleted.
+    """
+    path = Path(root) / "spec/anchors.json"
+    return sha256(path) if path.is_file() else None
+
+
 def record(root, command, inputs, outputs, timeout):
     root = Path(root).resolve()
     require(command, "command required after --command")
@@ -44,7 +55,7 @@ def record(root, command, inputs, outputs, timeout):
     manifest = {"id": rid, "started": now(), "command": command, "inputs": before,
                 "snapshot": snapshot, "recorder_environment": {"python": platform.python_version(),
                 "executable": sys.executable, "packages": versions},
-                "commit": commit}
+                "commit": commit, "anchors_sha256": anchors_fingerprint(root)}
     with (folder / "output.log").open("w", encoding="utf-8") as log:
         try:
             process = subprocess.Popen(command, cwd=root, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)

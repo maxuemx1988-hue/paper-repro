@@ -1,5 +1,56 @@
-# v2.8 去掉流程里的人（自主轮收口）
+# 发布版本对照（唯一编号来源）
 
+| 发布标签（git tag） | 开发线版本 | 日期 | 状态 |
+|---|---|---|---|
+| `v1` | v2.7 → v2.8 | 2026-11-19 | 首次公开发布（tag `v1`） |
+| `v2` | v3.0 | 2026-11-19 | 当前发布（tag `v2`）：下一节的全部改动 |
+
+约定（v3 起强制）：
+
+- `VERSION` 文件只写**当前发布标签**（今天为 `v2`）。
+- 每个条目标题写「发布标签 `<tag>` / 开发线 `<x.y>`」，说明该改动叠在哪个已发布版本上。
+- 改任何脚本 / 文档都必须同时改本节或追加条目，并跑 `python3 scripts/selfcheck.py`
+  （它会核对 `VERSION` 与本节标题，缺一条就报错）。
+
+# v3.0 少读、少猜、可回溯（发布标签 v2 / 开发线 v3.0）
+
+起因：把 Mira（科研 Agent 平台）的会话日志逐事件逆向之后，发现我们真正缺的不是更多检查器，
+而是三样东西——**唯一的下一步**、**首跑前的尺子**、**可回放的过程**。本版只补这三样，
+并把 SKILL 从 354 行压到 101 行（长文按需取）。
+
+- **`scripts/next.py`（最高优先级）**：复用 `validate.py` 的阶段清单，首个未通过的门禁打 `BLOCKED_BY:`，
+  并给一行可复制的 `NEXT:`；`--why` 才打印对应协议锚点。`validate.py` 降级为「升 stage 前的全量验收」。
+  实测动机：Mira 的调度逻辑写在提示词里，导致同一任务两次运行 `task_lifecycle` 开点差 174 个事件、
+  尺寸决策 churn 3–5 次；把顺序从提示词搬进代码是唯一根治办法。
+- **`spec/anchors.json` + `scripts/check_anchors.py`**：论文侧数值（平台值/峰位/带隙）首跑前预注册，
+  `record_run.py` 把该文件 sha256 写进首份 `manifest.json`；事后改锚点必须给
+  `{anchors_amendment:true, rule:"discriminator"}` 决策。初版设计本想用文件 mtime，评审指出
+  `cp`/`tar`/时钟都会破坏它，故改为内容指纹。旧工作区无此文件 → `NOT_APPLICABLE`。
+- **`spec/budget.json` + `scripts/check_budget.py`**：估算必须写算式（`basis`），`>2 h` 必须有 ≥2 条
+  出路清单，`measured` 只能绑 `runs/*/manifest.json`，ETA 偏离实测投影 >2× 或砍规模都要
+  `{budget_amendment:true}` 决策。动机：Mira Fig.8 先算出 300 CPU-h 才把 L=20 砍到 L=10；
+  而 B 会话把工具错误文案里的 `after 1200 seconds` 当成真实上限（实际 645 s 被杀）。
+- **`artifacts.jsonl` + `scripts/record_artifact.py`**：append-only、按 **sha256** 去重（不按文件名，
+  Mira 把同一张 PNG 同时算进根目录与 `delivery/`）、支持 `--supersede` 取代边；
+  `make_review.py` 新增 §6「过程时间线」，`reports/review.json` 带产物列表。
+- **`scripts/audit_self.py`**：只读自审（盲重跑、决策 churn、锚点状态、未钉产物的目标、非留出参考），
+  用来决定「下一个优化做什么」，**不进 `validate.py`**——避免又给人造一个必须读的硬约束。
+- **`scripts/vision.py critique`**：出版质量自查（图例重叠/标签相撞/刻度不可读/裁切），产出
+  `figures/compare/<tid>.critique.json`，`--dispute index=理由` 可驳回；明确它只是证据，
+  数字验收仍看 `check_loss` / `check_figure_side_by_side`。
+- **SKILL 瘦身 + `references/index.md`**：8 条红线留在 `SKILL.md`（每条绑一个 `check_*.py`），
+  细节迁往 `references/pitfalls.md`、`references/protocol.md` 新增「预注册锚点 / 算力预算 / 产物台账 /
+  失败归因表」四节；旧正文原样存 `references/archive/skill-v2.8.md`。
+- **`selfcheck.py` 新增断言**：`VERSION` 存在且与本节标题一致；`SKILL.md` ≤160 行；
+  SKILL 引用的脚本必须存在；每个 `check_*.py` 必须在 SKILL 或 `index.md` 被路由。
+- **`scaffold.py` 新增两个模板**（`anchors.json` / `budget.json`），用 `TEMPLATE:` 前缀标记未落定：
+  anchors 模板在 `stage>=calibrated` 直接判不通过，budget 模板在 `stage=final` 判不通过，中间阶段只 `[DISCLOSURE]`。
+- 新增 4 个测试文件：`tests/test_anchors.py`（4 例）、`tests/test_budget.py`（4 例）、
+  `tests/test_next.py`（3 例）、`tests/test_artifacts.py`（3 例），合计 75 → 89。
+
+> 发布标签 `v2`（2026-11-19）：`VERSION` 改为 `v2`，本节作为该 tag 的内容说明。
+
+# v2.8 去掉流程里的人（自主轮收口）〔发布标签 v1〕
 - `SKILL.md` 新增「唯一的人工闸门：`REVIEW.md` 签署」：人的介入只剩两处（REVIEW 裁决、E1–E5），
   其余不得打包成问题丢回用户；附「`[EVIDENCE]` / `runtime.json` / FIX 台账 / 数字化审计 / 论文未写取值」
   的自主轮处置表。判断标准一句话：能自己跑、能查、能算，就别问——「拒绝编造」不等于「请示用户」。

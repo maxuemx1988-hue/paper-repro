@@ -347,3 +347,74 @@ E4 不可逆且影响判定且置信非高；E5 所有参考不可得。违反 E
 5. 补齐 provenance 的版本/定位/条件/误差/用途/调参披露；旧 official_comparison 可保留名称并作为参考，但需补运行绑定和相应验证对象；截图提取补 fallback_reason。
 6. 旧 hypotheses.md 人工迁入 JSON，保留历史和原证据。重新运行可追溯计算后再声明验收。
 7. 新增 `spec/decisions.json`：把迁移过程中做出的约定选择、参数取舍、目标增删逐条登记（含选项、规则、依据、可逆性、置信、影响），并在 `LOG.md` 补 `[DECISION:Dn]` 标记。
+
+## 预注册锚点（spec/anchors.json）
+
+`calibration.json` 答"我的代码自洽吗"，`anchors.json` 答"我的物理对得上论文吗"。后者必须在**第一次真实运行之前**落盘，
+否则"跑完发现低 6%，把阈值放到 7%"在流程上完全合法——这是复现最常见的自证路径。
+
+```json
+{"items": [
+  {"id": "A1", "quantity": "plateau_square_Mz0.4", "expected": 0.390, "unit": "e2/h",
+   "tolerance": 0.01,
+   "source": {"kind": "paper", "locator": "Fig.3(b) 平台段正文值"},
+   "discriminates": "hard-wall vs periodic 边界条件",
+   "status": "untested"}
+]}
+```
+
+- `source.kind` 取 `paper` / `supplement` / `published_data` / `analytic` / `database` / `author_material`；`locator` 必须能定位到页/表/图。
+- `tolerance` 是**看到结果前**写下的允差，必须 > 0。
+- `status`：`untested` → `held` / `violated`。两者都要绑证据（`file` + `sha256` + `metric` + `result`，通常指向 `reports/<tid>.json`）；
+  `violated` 还必须写 `resolution`（"为什么偏低/偏高"），并在 `REPORT.md` §3 披露。
+- **指纹机制**：`record_run.py` 每次运行都把当时的 `spec/anchors.json` sha256 记进 `manifest.json` 的 `anchors_sha256`。
+  `check_anchors.py` 取**最早**那份 manifest 作基线；当前哈希与之不符时，必须在 `spec/decisions.json` 提供一条
+  `{"anchors_amendment": true, "rule": "discriminator", ...}`——即改动由判别实验驱动，而不是由结果驱动。
+- `stage=final` 时不允许还有 `untested`。无 `anchors.json`、或最早 manifest 早于 v3（无该字段）时返回
+  `NOT_APPLICABLE`，所以旧工作区不会被误判。
+
+## 算力预算（spec/budget.json）
+
+长扫描最容易变成"静默的 300 CPU-hour 作业"，或者把工具错误文案里的秒数当成真实上限。`check_budget.py` 只查结构：
+
+```json
+{"estimate": {"cpu_hours": 300, "planned_configs": 400, "basis": "8/3 n^3 * 20 layers * 150 pts / 1e9 * ..."},
+ "paths_considered": ["缩尺寸 L=10", "换算法（块对角）", "GPU", "缩截面"],
+ "chosen": {"configs": 300, "chunk_size": 25, "resume": true},
+ "measured": [{"chunk": "c01", "done": 25, "run": {"file": "runs/R03/manifest.json", "sha256": "..."}}],
+ "eta_hours": 9.8, "eta_basis": "measured 47.2 s/config from runs/R03", "churn_count": 2}
+```
+
+- `estimate.basis` 写算式，不写结论；`cpu_hours > 2` 时 `paths_considered` 至少两条。
+- `chosen.chunk_size >= 1`、`resume` 显式布尔——长任务必须可续跑，不能靠 `nohup` + `tail` 黑箱推进。
+- `measured[].run` 指向真实 `runs/*/manifest.json`（哈希校验）；`seconds` 缺省时用 manifest 的 `started`/`finished`。
+- `eta_hours` 必须带 `eta_basis` 且引用实测（含 `measured`/`manifest` 字样）；偏离实测投影超过 2x 需要
+  `{"budget_amendment": true}` 决策条目。
+- `chosen.configs < estimate.planned_configs`（砍规模）同样需要该决策条目，并披露 `churn_count`。
+- 不需要长扫描时写 `{"not_applicable": "<真实理由>"}`；scaffold 写的是 `TEMPLATE:` 前缀，`stage=final` 前必须落定。
+
+## 产物台账（artifacts.jsonl）
+
+```bash
+python3 scripts/record_artifact.py <dir> figures/compare/fig3_side_by_side.png \
+        --kind figure --target fig3 --note "左栏论文原图，右栏复现，VLM critique 已过"
+python3 scripts/record_artifact.py <dir> --list
+```
+
+- append-only，按 **sha256** 去重（同一内容换个文件名不会重复计数）；`--supersede <path>` 记录取代边。
+- `kind` 取 `figure` / `table` / `code` / `log` / `data` / `report` / `delivery`。
+- `make_review.py` 把台账渲染成 `REVIEW.md` §6 的过程时间线；`reports/review.json` 里也带产物路径列表。
+- 它不替代 `record_run.py`：前者记"产物是什么/取代了谁"，后者记"哪条命令产出它"。
+
+## 失败归因表（record_run 的 failure_class）
+
+失败必须分类，否则"重跑一次"会伪装成进展。失败记录建议补三个字段：
+
+| 字段 | 取值 |
+|---|---|
+| `failure_class` | `convention`（约定/单位） · `numeric`（数值不收敛） · `runtime`（OOM/超时/被杀） · `tool`（工具或环境坏） · `blocked`（沙箱策略拦截） · `input`（输入缺失/格式错） |
+| `retry_mode` | `retry_same`（原样重试） · `retry_param`（改参重试） · `reroute`（换路绕行） |
+| `retry_reason` | 一句判别依据（哪条证据说明这次重试不是碰运气） |
+
+- `retry_same` 连续出现 >= 2 次必须有理由，否则视为盲重跑（`audit_self.py` 会统计）。
+- `blocked` 不是代码错误：先在 `LOG.md` 记下被拒的操作与替代路径，再改策略（例如后台进程被拒时改用前台分块）。

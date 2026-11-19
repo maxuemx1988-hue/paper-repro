@@ -48,38 +48,58 @@ cp -r paper-repro <project>/.pi/skills/
 # 1) 建工作区；--official-code 决定 Route A / B
 python3 scripts/scaffold.py work --title 'Paper X Fig.1 复现' --level standard --official-code
 
-# 2) 填 spec/ 与 spec/project.json 的 null；stage 走 planning -> calibrated -> final
+# 2) 每轮只做 next.py 指的那一件事（唯一 NEXT；为什么要它看 --why）
+python3 scripts/next.py work --why
+
+# 3) 填 spec/ 后升 stage；升 stage 前跑全量验收
 python3 scripts/validate.py work          # 逐项跑 check_*，输出 PASS/FAIL/INCOMPLETE
 
-# 3) 视觉读数（OpenAI 兼容端点，默认 kimi 模型链）
+# 4) 视觉读数（OpenAI 兼容端点，默认 kimi 模型链）
 export PAPER_REPRO_VISION_API_KEY=...      # 或 OPENAI_API_KEY / pi models.json
 python3 scripts/vision.py describe crop.png -o read.json
 python3 scripts/vision.py audit work crops/Fig1a.png --pdf paper.pdf --page 3 \
     --bbox 120,340,480,620
+python3 scripts/vision.py critique work fig3 --paper crops/Fig3.png
 ```
 
 `validate.py` 的退出码即汇总状态（`PASS`=0 / `FAIL`=1 / `INCOMPLETE`=2），可直接进 CI。
 
+## v3 新增的三个机制
+
+| 机制 | 文件 | 解决的问题 |
+|---|---|---|
+| **唯一的下一步** | `scripts/next.py` | 模型自己排步骤导致同一决定反复改（churn）；现在只输出一行 `NEXT:` |
+| **首跑前的尺子** | `spec/anchors.json` + `check_anchors.py` | 看完结果再放宽允差；锚点在首个 `manifest.json` 里哈希锁定 |
+| **算力与过程可回溯** | `spec/budget.json` + `check_budget.py`、`artifacts.jsonl` + `record_artifact.py` | 静默 300 CPU-h 作业、把超时文案当 ETA、产物按文件名重复计数 |
+
+另有 `scripts/audit_self.py`（只读自审：盲重跑 / 决策 churn / 未钉产物的目标），
+只用来挑下一个优化，**不进 `validate.py`**。
+
 ## 目录
 
 ```
-SKILL.md              技能主文档（流程、闸门、升级条件）
-references/           协议、检查清单、报告/规格模板、领域档案
-scripts/              scaffold / validate / check_* / vision / digitize / make_review ...
-tests/                75 个 unittest 回归用例
+SKILL.md              技能主文档（8 条红线 + 推进方式；≤160 行，长文按需取）
+references/           协议、索引、踩坑清单、报告/规格模板、领域档案、v2.8 存档
+scripts/              next / validate / check_* / vision / digitize / make_review ...
+tests/                89 个 unittest 回归用例
 reports/              示例审计产物
-CHANGELOG.md          版本演进（当前内容版本 v2.8）
+VERSION               当前发布标签（唯一编号来源，配合 CHANGELOG 顶部的对照表）
+CHANGELOG.md          版本演进（每节标注「发布标签 / 开发线」）
 ```
 
 ## 版本
 
-Git tag **v1** = 本仓库首次公开发布，对应技能内容 **v2.8**（「去掉流程里的人」版：人的介入只剩
-`REVIEW.md` 签署与 E1–E5 升级两处）。之后 GitHub tag 独立编号，内容版本继续在 `CHANGELOG.md` 里递增。
+**发布标签**写 `VERSION`（今天 `v2`），**开发线**写 `CHANGELOG.md` 顶部对照表。
+每个条目标题形如「发布标签 `v2` / 开发线 `v3.0`」，`selfcheck.py` 会强制这两者一致。
+
+- tag `v1` = 首次公开发布，对应开发线 v2.8（人的介入只剩 `REVIEW.md` 签署与 E1–E5）。
+- tag `v2` = 当前发布，对应开发线 v3.0（`next.py` / `anchors` / `budget` / `artifacts` / SKILL 瘦身）。
 
 ## 测试
 
 ```bash
-python3 -m unittest discover -s tests -q    # 75 tests, ~35s
+python3 -m unittest discover -s tests -q    # 89 tests, ~35s
+python3 scripts/selfcheck.py                # 结构 + 版本标注 + 路由覆盖 + 全套回归
 ```
 
 ## 许可证
