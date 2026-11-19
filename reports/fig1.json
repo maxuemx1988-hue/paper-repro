@@ -1,0 +1,16 @@
+{
+  "metrics": {
+    "rms_norm": 0.0,
+    "coverage": 1.0,
+    "peak_dx": 0.0,
+    "peak_dy": 0.0
+  },
+  "failed": [],
+  "target": "fig1",
+  "status": "PASS",
+  "mode": "quantitative",
+  "validation_subject": "paper_result",
+  "mine_sha256": "056553d9e93754ef75902d346e9eec3b9a5b9900071aa5b9a570554cc74e6285",
+  "gt_sha256": "9662d0bc4ecdc6e850eac8fdeab5a4a9859f7fa4d73110e696c5a542378f0495",
+  "config_sha256": "cab143e92e36ce418c89113a5127ee9bfea00d12af1b946980f0267bed214d5b"
+}
